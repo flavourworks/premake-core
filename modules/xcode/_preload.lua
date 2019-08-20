@@ -36,6 +36,18 @@
 	}
 
 	p.api.register {
+		name = "xcodeassettags",
+		scope = "project",
+		kind = "list:string",
+	}
+
+	p.api.register {
+		name = "xcodeodr",
+		scope = "project",
+		kind = "key-array"
+	}
+
+	p.api.register {
 		name = "iosfamily",
 		scope = "config",
 		kind = "string",

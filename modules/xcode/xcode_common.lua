@@ -246,7 +246,7 @@
 		if type(overrides) == 'table' then
 			for name, value in pairs(overrides) do
 				-- Allow an override to remove a value by using false
-				settings[name] = iif(not table.equals(value, { false }), value, nil)
+				settings[name] = iif(value ~= false, value, nil)
 			end
 		end
 	end
@@ -268,7 +268,6 @@
 			SharedLib    = "com.apple.product-type.library.dynamic",
 			OSXBundle    = "com.apple.product-type.bundle",
 			OSXFramework = "com.apple.product-type.framework",
-			XCTest       = "com.apple.product-type.bundle.unit-test",
 		}
 		return types[iif(node.cfg.kind == "SharedLib" and node.cfg.sharedlibtype, node.cfg.sharedlibtype, node.cfg.kind)]
 	end
@@ -291,32 +290,10 @@
 			SharedLib    = "\"compiled.mach-o.dylib\"",
 			OSXBundle    = "wrapper.cfbundle",
 			OSXFramework = "wrapper.framework",
-			XCTest       = "wrapper.cfbundle",
 		}
 		return types[iif(node.cfg.kind == "SharedLib" and node.cfg.sharedlibtype, node.cfg.sharedlibtype, node.cfg.kind)]
 	end
 
---
--- Return the Xcode debug information format for the current configuration
---
--- @param cfg
---    The current configuration
--- @returns
---    The corresponding value of DEBUG_INFORMATION_FORMAT, or 'dwarf-with-dsym' if invalid
---
-
-	function xcode.getdebugformat(cfg)
-		local formats = {
-			["Dwarf"]      = "dwarf",
-			["Default"]    = "dwarf-with-dsym",
-			["SplitDwarf"] = "dwarf-with-dsym",
-		}
-		local rval = "dwarf-with-dsym"
-		if cfg.debugformat then
-			rval = formats[cfg.debugformat] or rval
-		end
-		return rval
-	end
 
 --
 -- Return a unique file name for a project. Since Xcode uses .xcodeproj's to
@@ -382,6 +359,7 @@
 		wks.xcode = { }
 
 		for prj in p.workspace.eachproject(wks) do
+
 			-- need a configuration to get the target information
 			local cfg = project.getconfig(prj, prj.configurations[1], prj.platforms[1])
 
@@ -403,6 +381,30 @@
 		end
 	end
 
+--
+-- Check if the node has an associated odr (On Demand Resources) tag
+--
+-- @param node
+--	Check if node is inside xcodeodr and return its tag
+--
+
+	function xcode.odrtag(node, prj)
+		if xcode.getbuildcategory(node) == "Resources" then
+			if prj.xcodeodr then
+				for name, value in pairs(prj.xcodeodr) do
+					if name == node.path then
+						local taglist = ""
+						for _, item in ipairs(value) do
+							taglist = (taglist .. item .. ", ")
+						end
+						return "settings = {ASSET_TAGS = (" .. taglist .. "); };"
+					end
+				end
+			end
+		end
+		return ""
+	end
+
 
 ---------------------------------------------------------------------------
 -- Section generator functions, in the same order in which they appear
@@ -414,9 +416,10 @@
 		tree.traverse(tr, {
 			onnode = function(node)
 				if node.buildid then
+					local tag = xcode.odrtag(node, tr.project)
 					settings[node.buildid] = function(level)
-						_p(level,'%s /* %s in %s */ = {isa = PBXBuildFile; fileRef = %s /* %s */; };',
-							node.buildid, node.name, xcode.getbuildcategory(node), node.id, node.name)
+						_p(level,'%s /* %s in %s */ = {isa = PBXBuildFile; fileRef = %s /* %s */; %s };',
+							node.buildid, node.name, xcode.getbuildcategory(node), node.id, node.name, tag)
 					end
 				end
 			end
@@ -653,71 +656,6 @@
 		end
 	end
 
-	local function xcode_GetBuildCommands(tr)
-		local buildCommandInfos = {}
-		tree.traverse(tr, {
-			onnode = function(node)
-				if node.buildcommandid then
-					local info = {
-						node = node,
-						inputs = { node.relpath },
-						outputs = {},
-						depends = {},
-						transact = false,
-					}
-					for cfg in project.eachconfig(tr.project) do
-						local filecfg = fileconfig.getconfig(node, cfg)
-						if filecfg then
-							for _, v in ipairs(filecfg.buildinputs) do
-								table.insert(info.inputs, project.getrelative(tr.project, v))
-							end
-							for _, v in ipairs(filecfg.buildoutputs) do
-								table.insert(info.outputs, project.getrelative(tr.project, v))
-							end
-						end
-					end
-					table.insert(buildCommandInfos, info)
-				end
-			end
-		})
-		for _, mine in ipairs(buildCommandInfos) do
-			for _, their in ipairs(buildCommandInfos) do
-				if mine ~= their then
-					for _, input in ipairs(mine.inputs) do
-						if table.contains(their.outputs, input) then
-							table.insert(mine.depends, their)
-							break
-						end
-					end
-				end
-			end
-		end
-		local buildCommands = {}
-		local leftover = #buildCommandInfos
-		while leftover > 0 do
-			local prev = leftover
-			for _, info in ipairs(buildCommandInfos) do
-				if not info.transact then
-					local transact = true
-					for _, depend in ipairs(info.depends) do
-						transact = depend.transact
-						if not transact then
-							break
-						end
-					end
-					if transact then
-						table.insert(buildCommands, info.node)
-						info.transact = true
-						leftover = leftover - 1
-					end
-				end
-			end
-			if prev == leftover then
-				error('detect circular reference.')
-			end
-		end
-		return buildCommands
-	end
 
 	local function xcode_PBXAggregateOrNativeTarget(tr, pbxTargetName)
 		local kinds = {
@@ -743,9 +681,6 @@
 		end
 
 		_p('/* Begin PBX%sTarget section */', pbxTargetName)
-
-		local buildCommands = xcode_GetBuildCommands(tr)
-
 		for _, node in ipairs(tr.products.children) do
 			local name = tr.project.name
 
@@ -772,9 +707,6 @@
 			_p(3,'buildPhases = (')
 			if hasBuildCommands('prebuildcommands') then
 				_p(4,'9607AE1010C857E500CD1376 /* Prebuild */,')
-			end
-			for _, v in ipairs(buildCommands) do
-				_p(4,'%s /* Build "%s" */,', v.buildcommandid, v.name)
 			end
 			if pbxTargetName == "Native" then
 				_p(4,'%s /* Resources */,', node.resstageid)
@@ -836,14 +768,22 @@
 
 
 	function xcode.PBXProject(tr)
-		_p('/* Begin PBXProject section */')
+		_p('/* Begin PBXProject section*/')
 		_p(2,'08FB7793FE84155DC02AAC07 /* Project object */ = {')
 		_p(3,'isa = PBXProject;')
+		_p(3,'attributes = {')
+		if tr.project.xcodeassettags then
+			_p(4,'KnownAssetTags = (')
+			_p(5, 'Guest,')
+            for _, tag in ipairs(tr.project.xcodeassettags) do
+				_p(5, '%s,', tag)
+            end
+            _p(4,');')
+        end
 		local capabilities = tr.project.xcodesystemcapabilities
 		if not table.isempty(capabilities) then
 			local keys = table.keys(capabilities)
 			table.sort(keys)
-			_p(3, 'attributes = {')
 			_p(4, 'TargetAttributes = {')
 			_p(5, '%s = {', tr.project.xcode.projectnode.targetid)
 			_p(6, 'SystemCapabilities = {')
@@ -855,8 +795,8 @@
 			_p(6, '};')
 			_p(5, '};')
 			_p(4, '};')
-			_p(3, '};')
 		end
+		_p(3, '};')
 
 		_p(3,'buildConfigurationList = 1DEB928908733DD80010E9CD /* Build configuration list for PBXProject "%s" */;', tr.name)
 		_p(3,'compatibilityVersion = "Xcode 3.2";')
@@ -956,7 +896,6 @@
 			end
 
 			if #commands > 0 then
-				table.insert(commands, 1, 'set -e') -- Tells the shell to exit when any command fails
 				commands = os.translateCommands(commands, p.MACOSX)
 				if not wrapperWritten then
 					_p('/* Begin PBXShellScriptBuildPhase section */')
@@ -980,80 +919,11 @@
 		end
 
 		doblock("9607AE1010C857E500CD1376", "Prebuild", "prebuildcommands")
-
-		local settings = {}
-		tree.traverse(tr, {
-			onnode = function(node)
-				if node.buildcommandid then
-					settings[node.buildcommandid] = function(level)
-						local commands = {}
-						local inputs = {}
-						local outputs = {}
-						for cfg in project.eachconfig(tr.project) do
-							local filecfg = fileconfig.getconfig(node, cfg)
-							if filecfg then
-								table.insert(commands, 'if [ "${CONFIGURATION}" = "' .. cfg.buildcfg .. '" ]; then')
-								if filecfg.buildmessage then
-									table.insert(commands, '\techo "' .. filecfg.buildmessage .. '"')
-								end
-								local cmds = os.translateCommandsAndPaths(filecfg.buildcommands, filecfg.project.basedir, filecfg.project.location)
-								for _, cmd in ipairs(cmds) do
-									table.insert(commands, '\t' .. cmd)
-								end
-								table.insert(commands, 'fi')
-								for _, v in ipairs(filecfg.buildinputs) do
-									inputs[v] = true
-								end
-								for _, v in ipairs(filecfg.buildoutputs) do
-									outputs[v] = true
-								end
-							end
-						end
-
-						if #commands > 0 then
-							table.insert(commands, 1, 'set -e') -- Tells the shell to exit when any command fails
-						end
-
-						_p(level,'%s /* Build "%s" */ = {', node.buildcommandid, node.name)
-						_p(level+1,'isa = PBXShellScriptBuildPhase;')
-						_p(level+1,'buildActionMask = 2147483647;')
-						_p(level+1,'files = (')
-						_p(level+1,');')
-						_p(level+1,'inputPaths = (');
-						_p(level+2,'"%s",', escapeSetting(node.relpath))
-						for v, _ in pairs(inputs) do
-							_p(level+2,'"%s",', escapeSetting(project.getrelative(tr.project, v)))
-						end
-						_p(level+1,');')
-						_p(level+1,'name = %s;', stringifySetting('Build "' .. node.name .. '"'))
-						_p(level+1,'outputPaths = (')
-						for v, _ in pairs(outputs) do
-							_p(level+2,'"%s",', escapeSetting(project.getrelative (tr.project, v)))
-						end
-						_p(level+1,');')
-						_p(level+1,'runOnlyForDeploymentPostprocessing = 0;');
-						_p(level+1,'shellPath = /bin/sh;');
-						_p(level+1,'shellScript = %s;', stringifySetting(table.concat(commands, '\n')))
-						_p(level,'};')
-					end
-				end
-			end
-		})
-
-		if not table.isempty(settings) then
-			if not wrapperWritten then
-				_p('/* Begin PBXShellScriptBuildPhase section */')
-				wrapperWritten = true
-			end
-			printSettingsTable(2, settings)
-		end
-
 		doblock("9607AE3510C85E7E00CD1376", "Prelink", "prelinkcommands")
 		doblock("9607AE3710C85E8F00CD1376", "Postbuild", "postbuildcommands")
 
 		if wrapperWritten then
 			_p('/* End PBXShellScriptBuildPhase section */')
-			_p('')
 		end
 	end
 
@@ -1140,7 +1010,7 @@
 		settings['ALWAYS_SEARCH_USER_PATHS'] = 'NO'
 
 		if cfg.symbols ~= p.OFF then
-			settings['DEBUG_INFORMATION_FORMAT'] = xcode.getdebugformat(cfg)
+			settings['DEBUG_INFORMATION_FORMAT'] = 'dwarf-with-dsym'
 		end
 
 		if cfg.kind ~= "StaticLib" and cfg.buildtarget.prefix ~= '' then
@@ -1154,7 +1024,6 @@
 				StaticLib    = "a",
 				OSXBundle    = "bundle",
 				OSXFramework = "framework",
-				XCTest       = "xctest",
 			}
 			local ext = cfg.buildtarget.extension:sub(2)
 			if ext ~= exts[iif(cfg.kind == "SharedLib" and cfg.sharedlibtype, cfg.sharedlibtype, cfg.kind)] then
