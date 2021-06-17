@@ -97,6 +97,12 @@
 					configs[prjcfg] = prjcfg
 					p.push('<ProjectConfiguration Include="%s">', vstudio.projectConfig(cfg, arch))
 					p.x('<Configuration>%s</Configuration>', vstudio.projectPlatform(cfg))
+
+					-- custom platforms
+					if _ACTION == "vs2019_switch" then
+						arch = "NX64"
+					end
+
 					p.w('<Platform>%s</Platform>', arch)
 					p.pop('</ProjectConfiguration>')
 				end
@@ -150,7 +156,6 @@
 
 		-- Write out the configurable globals
 		for cfg in project.eachconfig(prj) do
-
 			-- Find out whether we're going to actually write a property out
 			local captured = p.capture(	function()
 										p.push()
@@ -200,6 +205,14 @@
 	function m.configurationProperties(cfg)
 		m.propertyGroup(cfg, "Configuration")
 		p.callArray(m.elements.configurationProperties, cfg)
+
+		-- custom platforms
+		if _ACTION == "vs2019_switch" then
+			p.w("<NintendoSdkRoot>$(NINTENDO_SDK_ROOT)</NintendoSdkRoot>")
+			p.w("<NintendoSdkSpec>NX</NintendoSdkSpec>")
+			p.w("<NintendoSdkBuildType>%s</NintendoSdkBuildType>", cfg.buildcfg)
+		end
+
 		p.pop('</PropertyGroup>')
 	end
 
@@ -2367,6 +2380,12 @@
 	function m.propertySheets(cfg)
 		p.push('<ImportGroup Label="PropertySheets" %s>', m.condition(cfg))
 		p.w('<Import Project="$(UserRootDir)\\Microsoft.Cpp.$(Platform).user.props" Condition="exists(\'$(UserRootDir)\\Microsoft.Cpp.$(Platform).user.props\')" Label="LocalAppDataPlatform" />')
+		
+		-- custom platfroms
+		if _ACTION == "vs2019_switch" then
+			p.w('<Import Project="$(NintendoSdkRoot)\\Build\\VcProjectUtility\\ImportNintendoSdk.props" Condition="exists(\'$(NintendoSdkRoot)\\Build\\VcProjectUtility\\ImportNintendoSdk.props\')" />')
+		end
+		
 		p.pop('</ImportGroup>')
 	end
 

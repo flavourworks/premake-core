@@ -416,6 +416,12 @@
 	function vstudio.projectConfig(cfg, arch)
 		local platform = vstudio.projectPlatform(cfg)
 		local architecture = arch or vstudio.archFromConfig(cfg, true)
+
+		-- custom platforms
+		if _ACTION == "vs2019_switch" then
+			architecture = "NX64"
+		end
+
 		return platform .. "|" .. architecture
 	end
 

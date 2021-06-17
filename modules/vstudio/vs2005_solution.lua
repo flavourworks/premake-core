@@ -184,6 +184,13 @@
 					context.platform = vstudio.projectPlatform(context.prjCfg)
 					context.architecture = vstudio.archFromConfig(context.prjCfg, true)
 
+					-- custom platforms
+					if _ACTION == "vs2019_switch" then
+						context.platform = vstudio.projectPlatform(context.prjCfg)
+						context.descriptor = string.format("%s|%s", context.platform, "NX64")
+						context.architecture = "NX64"
+					end
+					
 					p.push()
 					p.callArray(sln2005.elements.projectConfigurationPlatforms, cfg, context)
 					p.pop()
@@ -215,12 +222,18 @@
 		local sorted = {}
 
 		for cfg in p.workspace.eachconfig(wks) do
-
+			
 			-- Create a Visual Studio solution descriptor (i.e. Debug|Win32) for
 			-- this solution configuration. I need to use it in a few different places
 			-- below so it makes sense to precompute it up front.
 
 			local platform = vstudio.solutionPlatform(cfg)
+			
+			-- custom platforms
+			if _ACTION == "vs2019_switch" then
+				platform = "NX64"
+			end
+
 			descriptors[cfg] = string.format("%s|%s", cfg.buildcfg, platform)
 
 			-- Also add the configuration to an indexed table which I can sort below
