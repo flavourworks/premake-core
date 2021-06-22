@@ -211,6 +211,9 @@
 			p.w("<NintendoSdkRoot>$(NINTENDO_SDK_ROOT)</NintendoSdkRoot>")
 			p.w("<NintendoSdkSpec>NX</NintendoSdkSpec>")
 			p.w("<NintendoSdkBuildType>%s</NintendoSdkBuildType>", cfg.buildcfg)
+			if _OPTIONS["data_dir"] then
+				p.w("<ApplicationDataDir>%s</ApplicationDataDir>", _OPTIONS["data_dir"])
+			end
 		end
 
 		p.pop('</PropertyGroup>')
