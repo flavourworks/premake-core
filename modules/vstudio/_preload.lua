@@ -135,6 +135,12 @@
 		}
 	}
 
+	p.api.register {
+		name = "nsodependencies",
+		scope = "config",
+		kind = "list:string",
+	}
+
 --
 -- Decide when the full module should be loaded.
 --

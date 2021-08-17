@@ -512,6 +512,7 @@
 				m.optimizeReferences,
 				m.additionalDependencies,
 				m.additionalLibraryDirectories,
+				m.additionalNsoDependencies,
 				m.importLibrary,
 				m.entryPointSymbol,
 				m.generateMapFile,
@@ -1383,6 +1384,13 @@
 		end
 	end
 
+	-- nintendo switch
+	function m.additionalNsoDependencies(cfg)
+		if #cfg.nsodependencies > 0 then
+			local nso = table.concat(cfg.nsodependencies, ";")
+			m.element("AdditionalNSODependencies", nil, "%s;%%(AdditionalNSODependencies)", nso)
+		end
+	end
 
 	function m.additionalManifestFiles(cfg)
 		-- get the manifests files
