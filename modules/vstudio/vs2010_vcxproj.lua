@@ -513,6 +513,7 @@
 				m.additionalDependencies,
 				m.additionalLibraryDirectories,
 				m.additionalNsoDependencies,
+                m.finalizeMetaSource,
 				m.importLibrary,
 				m.entryPointSymbol,
 				m.generateMapFile,
@@ -1391,6 +1392,12 @@
 			m.element("AdditionalNSODependencies", nil, "%s;%%(AdditionalNSODependencies)", nso)
 		end
 	end
+    
+    function m.finalizeMetaSource(cfg)
+        if cfg.finalizeMetaSource ~= nil then        
+            m.element("FinalizeMetaSource", nil, "%s", cfg.finalizeMetaSource)
+        end
+    end
 
 	function m.additionalManifestFiles(cfg)
 		-- get the manifests files

@@ -140,6 +140,12 @@
 		scope = "config",
 		kind = "list:string",
 	}
+    
+    p.api.register {
+        name = "finalizeMetaSource",
+        scope = "config",
+        kind = "string",
+    }
 
 --
 -- Decide when the full module should be loaded.
